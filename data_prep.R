@@ -36,7 +36,7 @@ het6 <- lapply(1:10, function(x) {
   rast(l6[-grep("DuncanSaddle", l6)][x]) |> crop(rnull[[x]]) |> resample(rnull[[x]])})
 het8 <- lapply(1:10, function(x) {
   rast(l8[-grep("DuncanSaddle", l8)][x]) |> crop(rnull[[x]]) |> resample(rnull[[x]])})
-# - rasters: dtm
+# - rasters: dtm + topographic derivatives
 ll <- list.files("~/../../Volumes/az_drive/uas_2022/", pattern = "_dtm_", full.names = TRUE, recursive = TRUE) 
 elev <- lapply(1:10, function(x) {
   rast(ll[[x]]) |> crop(rnull[[x]]) |> resample(rnull[[x]], method = "average")}) 
@@ -73,19 +73,22 @@ for(i in 1:length(unique(cells$site))) {
 # --- combine raster values with field
 # - add: distance to fire edge, easting, northing
 cells |> 
-  mutate(burnt = st_intersection(cells, blines)$burn, 
-         east = as.numeric(st_coordinates(geometry)[,1]), 
+  st_intersection(blines) |>
+  mutate(east = as.numeric(st_coordinates(geometry)[,1]), 
          north = as.numeric(st_coordinates(geometry)[,2]), 
-         ucid = as.numeric(paste0(as.numeric(as.factor(site)), "00",cid)),
+         ucid = as.numeric(paste0(as.numeric(as.factor(site)) + 100, cid)),
          dist = 0) |> 
   bind_cols(cdat |> select(-site)) -> celldf
 # add distance
 dmat <- st_distance(celldf, by_element = FALSE)
-idx <- which(celldf$burnt == 1)
-idxb <- dmat[-idx,]  
-for(i in idx) {celldf$dist[i] = min(idxb[,i])}
+idb <- which(celldf$burn == 1)
+idnb <- which(celldf$burn == 0)
+dnb <- dmat[-idb,]  
+db <- dmat[-idnb,]  
+for(i in idb) {celldf$dist[i] = min(dnb[,i])}
+for(i in idnb) {celldf$dist[i] = -min(db[,i])}
 
-
+plot(filter(celldf, site == "Cold")["dist"], pch = 19)
 # add counts
 rcounts <- lapply(1:10, function(x) {
   tmp <- st_as_sf(st_as_stars(rnull[[x]]), as.points = FALSE, merge = TRUE) |> select()
