@@ -11,7 +11,7 @@ plants <- st_read("~/../../Volumes/az_drive/FieldData/FieldData_2022/plant_data.
   filter(site != "DuncanSaddle") |> 
   st_transform(32611)
 cells <- st_read("~/../../Volumes/az_drive/FieldData/FieldData_2022/cells.geojson") |> 
-  filter(site != "DuncanSaddle") |> select(site, cid) |>
+  filter(site != "DuncanSaddle") |> select(site, cid) |> mutate(ucid = paste0(site, "_", cid)) |>
   st_transform(32611)
 blines <- st_read("~/../../Volumes/az_drive/FieldData/FieldData_2022/burn_lines.geojson") |>
   filter(site != "DuncanSaddle") |> select(burn) |>
@@ -57,81 +57,47 @@ slopes <- lapply(1:10, function(x) {
     aggregate(fact = 166) |> terrain(v = "slope", neighbors = 8) |>
     crop(rnull[[x]]) |> resample(rnull[[x]]) })
 
-# - combine raster info into a data frame
-cdat <- data.frame(site = NULL, het3 = NULL, het6 = NULL, het8 = NULL, 
-                   tpi = NULL, slope = NULL, elev = NULL,
-                   max.ht = NULL, avg.ht = NULL)
-for(i in 1:length(unique(cells$site))) {
-  j <- unique(cells$site)[i]
-  df <- data.frame(site = rep(j, table(cells$site)[i]), 
-                   het3 = NA, het6 = NA, het8 = NA, 
-                   tpi = NA, slope = NA, elev = NA,
-                   max.ht = NA, avg.ht = NA)
-  df[,2] <- extract(het3[[i]], cells[cells$site == j,])[,2]
-  df[,3] <- extract(het6[[i]], cells[cells$site == j,])[,2]
-  df[,4] <- extract(het8[[i]], cells[cells$site == j,])[,2]
-  df[,5] <- extract(tpis[[i]], cells[cells$site == j,])[,2]
-  df[,6] <- extract(slopes[[i]], cells[cells$site == j,])[,2]
-  df[,7] <- extract(elev[[i]], cells[cells$site == j,])[,2]
-  df[,8] <- extract(chmMax[[i]], cells[cells$site == j,])[,2]
-  df[,9] <- extract(chmAvg[[i]], cells[cells$site == j,])[,2]
-  cdat <- bind_rows(cdat, df)
-}
-# -----
 
-# --- combine raster values with field data and site chars
-# - add: distance to fire edge, easting, northing
-cells |> 
-  st_intersection(blines) |>
-  mutate(east = as.numeric(st_coordinates(geometry)[,1]), 
-         north = as.numeric(st_coordinates(geometry)[,2]), 
-         ucid = paste0(site, "_", cid),
-         dist = 0) |> 
-  bind_cols(cdat |> select(-site)) -> celldf
-# add distance
-dmatb <- st_distance(celldf, filter(blines, burn == 0))
-dmatnb <- st_distance(celldf, filter(blines, burn == 1))
-idb <- which(celldf$burn == 1)
-idnb <- which(celldf$burn == 0)
-for(i in idb) {celldf$dist[i] = min(dmatb[i,])}
-for(i in idnb) {celldf$dist[i] = -min(dmatnb[i,])}
-
-# add counts
+# === extract true plant counts (aka field/ground counts)
 rcounts <- lapply(1:10, function(x) {
+  s <- unique(cells$site)[x]
   tmp <- st_as_sf(st_as_stars(rnull[[x]]), as.points = FALSE, merge = TRUE) |> select()
   tmp |> 
-    mutate(n = lengths(st_intersects(geometry, plants |>
-                                            filter(Species %in% c("ARTR", "ARTRW", "ARTR4", "ARTRV")), 
-                                     sparse = TRUE)),
-           shrubs_n = lengths(st_intersects(geometry, plants |>
-                                       filter(Class == "Shrub"), 
-                                     sparse = TRUE)),
-           gt25_n = lengths(st_intersects(geometry, plants |>
-                                       filter(Species %in% c("ARTR", "ARTRW", "ARTR4", "ARTRV"), Ht_gt_25 == 1), 
-                                     sparse = TRUE))) 
-  }) |> bind_rows()
+    mutate(cid = extract(rnull[[x]], tmp)[,2], 
+           site = s) |> 
+    mutate(nARTR = lengths(st_intersects(geometry, plants |>
+                                           filter(Species %in% c("ARTR", "ARTRW", "ARTRV")), 
+                                         sparse = TRUE)),
+           nNonARTR = lengths(st_intersects(geometry, plants |>
+                                              filter(Class == "Shrub", Species %notin% c("ARTR", "ARTRW", "ARTRV")), 
+                                            sparse = TRUE)),
+           nARTRgt25 = lengths(st_intersects(geometry, plants |>
+                                               filter(Species %in% c("ARTR", "ARTRW", "ARTRV"), Ht_gt_25 == 1), 
+                                             sparse = TRUE)),
+           nNonARTRgt25 = lengths(st_intersects(geometry, plants |>
+                                                  filter(Class == "Shrub", Species %notin% c("ARTR", "ARTRW", "ARTRV"), Ht_gt_25 == 0), 
+                                                sparse = TRUE)), 
+           nShrubs = lengths(st_intersects(geometry, plants |> 
+                                             filter(Class == "Shrub"))), 
+           val = lengths(st_intersects(geometry, cells|> 
+                                         filter(site == s), sparse = TRUE)), 
+           ucid = paste0(site, "_", cid)) 
+}) |> bind_rows()  
 
-celldf |> 
-  st_intersection(rcounts) |>
-  as.data.frame() |> select(-geometry) -> celldfout
+# === export field counts
+rcounts |> # write_sf("data/celldat_fcounts.geojson", delete_dsn = TRUE)
+  as.data.frame() |> select(-geometry) |> write.csv("data/celldat_fcounts.csv", row.names = FALSE)
+# ===
 
-write.csv(celldfout, "data/celldat.csv", row.names = FALSE)
-
-# --- full raster dataset for predictions
-rcell <- rcounts |> select()
-s = lapply(1:length(rnull), function(x) {
-  j <- unique(cells$site)[x]
-  rep(j, length(as.matrix(rnull[[x]])))
-}) |> unlist()
-
-rcell <- rcounts |> select() |> 
-  mutate(site = s,
-         cid = NA,
-         het3 = NA, het6 = NA, het8 = NA, 
+# === extract cell-level covariates 
+rcell <- rcounts |> select(site, cid, ucid, val) |> 
+  mutate(het3 = NA, het6 = NA, het8 = NA, 
          tpi = NA, slope = NA, elev = NA, 
          max.ht = NA, avg.ht = NA,
          east = as.numeric(st_coordinates(st_centroid(geometry))[,1]), 
-         north = as.numeric(st_coordinates(st_centroid(geometry))[,2])) 
+         north = as.numeric(st_coordinates(st_centroid(geometry))[,2]), 
+         burnt = lengths(st_intersects(geometry, blines |> filter(burn == 1))),
+         dist = 0) 
 
 for(i in 1:length(rnull)) {
   j <- unique(cells$site)[i]
@@ -148,147 +114,216 @@ for(i in 1:length(rnull)) {
   rcell[idx,"avg.ht"] <- extract(chmAvg[[i]], rcell[idx,])[,2]
 }
 
-rcell |> 
-  mutate(ucid = paste0(site, "_", cid)) |> 
-  bind_cols(rcounts |> as.data.frame() |> select(-geometry)) |> 
-  mutate(burn = lengths(st_intersects(geometry, blines |> 
-                                        filter(burn == 1))),
-         val = ifelse(ucid %in% celldfout$ucid, 1, 0),
-         dist = 0) -> rcellout
 # --- add distance
-dmatb <- st_distance(rcellout, filter(blines, burn == 0))
-dmatnb <- st_distance(rcellout, filter(blines, burn == 1))
-idb <- which(rcellout$burn == 1)
-idnb <- which(rcellout$burn == 0)
-for(i in idb) {rcellout$dist[i] = min(dmatb[i,])}
-for(i in idnb) {rcellout$dist[i] = -min(dmatnb[i,])}
+dmatb <- st_distance(rcell, filter(blines, burn == 0))
+dmatnb <- st_distance(rcell, filter(blines, burn == 1))
+idb <- which(rcell$burn == 1)
+idnb <- which(rcell$burn == 0)
+for(i in idb) {rcell$dist[i] = min(dmatb[i,])}
+for(i in idnb) {rcell$dist[i] = -min(dmatnb[i,])}
 # ---
 
-st_write(rcellout, "data/celldat_full.geojson")
-
-# --- end cell-level data
+# === export cell-level covariates
+rcell |> write_sf("data/celldat_covar.geojson", delete_dsn = TRUE) 
+  as.data.frame() |> select(-geometry) |> write.csv("data/celldat_covar.csv", row.names = FALSE)
+# ===
+rcell <- st_read("data/celldat_covar.geojson")
 
 
 # === Add Individual-level data
-# inputs: 
-# plant_data.geojson - field data; 
-# {site}_5m_raster.tif - define ROI and CID attribute for each plant
-# celldat_full.geojson - cell-level dataset with plant counts
-# predicted_plants_rf_v1_{site}.geojson - predicted labels + P(ARTR) for segmented layer
 
-# outputs: plantdat_artr_full.csv, plantdat_artr_full.geojson
-ll <- list()
-sites <- unique(cells$site)
-for(i in 1:length(sites)) {
-  site <- sites[i]
-  # --------------------------------
-  dfg <- st_read("data/celldat_full.geojson") |> 
-    filter(site == !!site) 
+for(k in 1:length(unique(rcell$site))) {
+
+site <- unique(rcell$site)[k]  
+# this is pretty convoluted stuff. takes time to follow what each does.
   
-  # specify paths
-  path <- "~/../../Volumes/az_drive/FieldData/FieldData_2022/predicted_plants_rf_v1_sites/"
-  # load segments with predictions
-  dfi <- st_read(paste0(path, "predicted_plants_rf_v1_", site, ".geojson")) |>
-    select(ID, Species, Class, site, plant_type_preds, prob_ARTR, uid) |> 
-    # re-code all sagebrush species
-    mutate(Species0 = ifelse(Species %in% c('ARTR', 'ARTR4', 'ARTRV', 'ARTRW'), 'ARTR', Species)) |>
-    st_crop(ext(rnull[[i]])) 
-  
-  st_agr(dfi) <- 'constant'
-  st_agr(dfg) <- 'constant'
-  
-  dfi |> 
-    select(-ID, -uid) |>
-    mutate(ucid = st_intersection(dfi |>
-                                    st_centroid(), dfg[,"ucid"]) |> as.data.frame() |> pull(ucid), 
-           # assign segments field ID, Species by a single overlap. Otherwise NA
-           id = sapply(st_intersects(geometry, st_buffer(plants, .1)), 
-                       function(x) { tmp = plants$ID[x]
-                       out = ifelse(length(tmp) == 0 | length(tmp) > 1, NA, tmp)}),
-           # assign whether the matching segments are below or above 25cm
-           Ht_gt_25 = sapply(st_intersects(geometry, st_buffer(plants, .1)), 
-                             function(x) { tmp = plants$Ht_gt_25[x]
-                             out = ifelse(length(tmp) == 0 | length(tmp) > 1, NA, tmp)}),
-           # assign 1 if a plant is detected but not counted as so because there are two plants overlapping the segment
-           detMult = sapply(st_intersects(geometry, st_buffer(plants, .1)), 
-                             function(x) { tmp = plants$Ht_gt_25[x]
-                             out = ifelse(length(tmp) > 1, length(tmp), 0)})) |> 
-    # remove marginal matched plants that are outside the central 5m cell, ie overlap by polygon margins
-    filter( !(!is.na(Species0) & is.na(id)), !(is.na(Species0) & !is.na(id)) ) -> a
-  
-  st_agr(plants) <- 'constant'
-  
-  plants |> 
-    filter(site == !!site) |>
-    mutate(Species0 = ifelse(Species %in% c('ARTR', 'ARTR4', 'ARTRV', 'ARTRW'), 'ARTR', Species)) |>
-    rename("id" = "ID") |> 
-    select(id, CID, Class, Species, Species0, site, Ht_gt_25) |> 
-    # missed ID
-    mutate(plant_type_preds = NA, prob_ARTR = NA, 
-           ucid = paste0(site, "_", CID)) |> 
-    # filter only field plants that were not detected to avoid duplicates
-    filter(id %notin% unique(a$id)) -> tmp
-  
-  st_agr(tmp) <- 'constant'
-  
-  out <- a |>
-    st_centroid() |>
-    mutate(z = NA, y = 1) |>
-    mutate(z = ifelse(Species0 == 'ARTR', 1, z), # present 
-           z = ifelse(Species0 != 'ARTR' & !is.na(id), 0, z), # present not ARTR
-           # if z is not field data & not validated as true/false presence -> unknown 
-           ) |>  
-    # append field data that was not detected
-    bind_rows(tmp |>
-                mutate(z = ifelse(Species0 == 'ARTR', 1, 0), # field spp ARTR
-                       y = ifelse(is.na(plant_type_preds), 0, 1)) ) |>
-    # filter only plants that were classified as ARTR or field-recorded as ARTR
-    # Species0 reduces all sage shrubs variants of interest to ARTR 
-    filter(Species0 == 'ARTR' | plant_type_preds == 'ARTR')  
-  
-  ll[[i]] <- out
+segpol <- st_read(paste0("~/../../Volumes/az_drive/FieldData/FieldData_2022/predicted_plants_rf_v1_sites/predicted_plants_rf_v1_", site, ".geojson") ) |> 
+  select(uid, site, chm_max, area, plant_type_preds, prob_ARTR) 
+st_agr(segpol) <- "constant"
+# classified polygons
+segpol_nonartr <- segpol |> filter(plant_type_preds != 'ARTR')
+segpol_artr <- segpol |> filter(plant_type_preds == 'ARTR')
+# field points
+artr <- plants |> 
+  filter(!grepl("same", notes),
+    site == !!site, Ht_gt_25 == 1, 
+    Species %in% c('ARTR', 'ARTRW', 'ARTRV'))
+st_agr(artr) <- "constant"
+nonartr <- plants |> 
+  filter(Species %notin% c('ARTR', 'ARTRW', 'ARTRV'))
+st_agr(nonartr) <- "constant"
+
+# === Level 1: perfect detections (one to one match)
+l1idx <- lengths(st_intersects(segpol_artr, artr, sparse = TRUE) )
+
+l1empty <- segpol_artr[l1idx == 0,]
+# summarize certain L1
+l1TP <- segpol_artr[l1idx == 1,] #TP pols
+l1artr <- artr |> 
+  mutate(var = lengths(st_intersects(geometry, segpol_artr[l1idx < 2,]))) |>   
+  filter(var == 1) |> select(-var) |>
+  mutate(TP = 1, FP = 0, FN = 0)  |> # TP pts
+  st_intersection(segpol_artr[l1idx < 2,c('chm_max', 'area','uid','geometry')])
+
+# === Level 1a: 1+ pts over 1 polygon (result: some FN and some TP)
+l1artrFNtmp <- artr |> 
+  st_intersection(segpol_artr[l1idx > 1, c('chm_max', 'area','uid', 'geometry')]) |>   
+  mutate(dist = apply(
+    as.matrix(st_distance(geometry, st_centroid(segpol_artr[l1idx > 1, ]) )), 
+    1, min) ) |> 
+  group_by(uid) |>
+  filter(dist != min(dist)) |> ungroup() |> select(-dist)
+
+notFN <- l1empty |> st_intersection(l1artrFNtmp |> st_buffer(.15) |> pull(geometry))
+notFNpts <- l1artrFNtmp |> st_buffer(.15) |> st_intersection(l1empty[,'geometry']) |> st_centroid()
+
+# --- summarize L1a
+l1empty |> filter(uid %notin%  notFN$uid) -> l1empty
+l1TP |> bind_rows(segpol_artr |> 
+                    filter(uid %in% l1artrFNtmp$uid)) -> l1TP
+l1artr |> 
+  bind_rows(artr |> 
+              st_intersection(segpol_artr[l1idx > 1, c('chm_max', 'area','uid', 'geometry')]) |>   
+              mutate(dist = apply(
+                as.matrix(st_distance(geometry, st_centroid(segpol_artr[l1idx > 1, ]) )), 
+                1, min) ) |> 
+              group_by(uid) |>
+              filter(dist == min(dist)) |> ungroup() |> select(-dist)) |> 
+  bind_rows(notFNpts) |>
+  mutate(TP = 1, FP = 0, FN = 0) |> 
+  st_centroid() -> l1artr
+
+l1artrFN <- l1artrFNtmp |> filter(uid %notin% notFNpts$uid) |>
+  mutate(TP = 0, FP = 0, FN = 1, chm_max = NA, area = NA)
+# --- end L1a
+
+# = Level2: check l1empty overlap with non-detected plants (radius = 0.15 m)
+l2artrtmp <- artr |> 
+  # plants not overlapping w/ anything
+  mutate(var = lengths(st_intersects(geometry, segpol_artr))) |>   
+  filter(var == 0) |> select(-var) |> st_buffer(.15)
+# plants + 15cm buffer that overlap w/ empty pols 
+l2idx <- lengths(st_intersects(l1empty, l2artrtmp, sparse = TRUE))
+
+# a pol in l1empty can overlap 1+ points with 15cm buffers
+# pol is a valid detection; overlapping pts except closest are FN
+l2artrtmp |> 
+  st_intersection(l1empty[l2idx > 0, c('chm_max', 'area','uid','geometry')]) |>
+  mutate(dist = apply(
+    as.matrix(st_distance(geometry, st_centroid(l1empty[l2idx > 0, ]) )), 
+    1, min) ) |> 
+  group_by(uid) |>
+  filter(dist != min(dist)) |> ungroup() |> select(-dist) |> 
+  st_centroid() -> l2artrFNadd
+
+# init summary
+l2TP <- l1empty[l2idx > 0, ]
+l2artr <- l2artrtmp |> filter(ID %notin% l2artrFNadd$ID) |>
+  st_intersection(l2TP[,c('chm_max', 'area', 'uid','geometry')]) |> 
+  mutate(TP = 1, FP = 0, FN = 0) |>
+  st_centroid()
+
+# summarize FN pts at L2
+l2artrFN <- l2artrtmp |> 
+  mutate(var = lengths(st_intersects(geometry, l1empty)), uid = NA) |> 
+  filter(var == 0) |> select(-var) |> 
+  bind_rows(l2artrFNadd) |> st_centroid() |>
+  mutate(TP = 0, FP = 0, FN = 1, chm_max = NA, area = NA)
+
+# summarize FP pols at L2
+l2FP <- l1empty |> 
+  filter(l2idx == 0) |> 
+  mutate(var = lengths(st_intersects(geometry, plants |>
+                               filter(!grepl("same", notes),
+                                      site == !!site, Ht_gt_25 == 0,
+                                      Species %in% c('ARTR', 'ARTRW', 'ARTRV')))) ) |>
+  filter(var == 0) |> select(-var) |>
+  mutate(ID = NA, Class = NA, Species = NA, Ht_gt_25 = NA, notes = NA, elev = NA,
+         TP = 0, FP = 1, FN = 0) 
+# add CID to each FP polygon; NA if polygon outside validated cells
+l2FP |>
+  mutate(CID = extract(rnull[[k]], l2FP |> st_centroid())[,2], 
+         FP = ifelse(CID %in% c(rcell$cid[rcell$site == !!site & rcell$val == 1]), 
+                     FP, NA),
+         TP = ifelse(is.na(FP), NA, TP), FN = ifelse(is.na(FP), NA, FN)) |>
+  st_intersection(rcell[,'geometry']) -> l2FP
+# --- end of L2
+
+# === combine sets
+
+l2FP |>
+  st_centroid() |>
+  bind_rows(l1artr, l2artr) |>
+  bind_rows(l1artrFN, l2artrFN)  -> ca
+
+ca |> write_sf( paste0("../plantdat_artr_site/plantdat_artr_", site, ".geojson"), delete_dsn = TRUE )
+ca |> 
+  as.data.frame() |> select(-geometry) |> 
+  write.csv( paste0("data/plantdat_artr_site/plantdat_artr_", site, ".csv"),row.names = FALSE)
+
 }
 
-ll |> bind_rows() |>
-  write_sf("data/plantdat_artr_full.geojson", delete_dsn = TRUE)
-ll |> bind_rows() |> 
+# === Combine individual TP, FN, FP indices into cell-level counts
+rcell <- st_read("data/celldat_covar.geojson")
+ll <- list.files("data/plantdat_artr_site/", full.names = TRUE)
+
+map(ll, read.csv) |> 
+  bind_rows() |> 
+  filter(!is.na(CID)) |> 
+  mutate(Unk = ifelse(is.na(TP) & is.na(FN) & is.na(FP), 1, 0)) |>
+  select(site, TP, FN, FP, Unk, CID) |>
+  group_by(site, CID) |> summarize_all(sum) |> ungroup() |>
+  mutate(ucid = paste0(site, "_", CID)) -> cts
+
+rcell |> 
+  select(site, cid, ucid, val) |> 
+  left_join(cts |> select(-site, -CID), by = 'ucid' ) |> 
+  mutate(Unk = ifelse(val == 0 & is.na(Unk), 0, Unk),
+         Unk = ifelse(val == 1 & is.na(Unk), 0, Unk), 
+         TP = ifelse(val == 1 & is.na(TP), 0, TP), 
+         FN = ifelse(val == 1 & is.na(FN), 0, FN), 
+         FP = ifelse(val == 1 & is.na(FP), 0, FP)) -> out
+  
+out |> #write_sf("data/celldat_match_counts.geojson")  
   as.data.frame() |> select(-geometry) |> 
-  write.csv("data/plantdat_artr_full.csv", row.names = FALSE)
+  write.csv("data/celldat_match_counts.csv", row.names = FALSE)
 
-# === end Individual-level data
 
-# === Add precieved counts to the cell-level dataset
-plantdat_artr <- st_read("data/plantdat_artr_full.geojson") 
+# === Visualize detection patterns
+# === individual-level
+ll <- list.files("data/plantdat_artr_site/", full.names = TRUE)
 
-dfg <- st_read('data/celldat_full.geojson') |>
-  select(-gt25_n, -shrubs_n) |>
-  mutate(# n_obs: number of drone detected plants 
-         n_obs = lengths(st_intersects(geometry, plantdat_artr |> filter(y == 1), sparse = TRUE)), 
-         # n: number of field mapped plants
-         n = ifelse(val == 1, n, NA),
-         # ngt25: number of field mapped plants taller than 25 cm
-         ngt25 = lengths(st_intersects(geometry, filter(plantdat_artr, Ht_gt_25 == 1 & z == 1), sparse = TRUE)),
-         ngt25 = ifelse(val == 1, ngt25, NA), 
-         # nTP: number of field mapped + detected with UAS
-         nTP = lengths(st_intersects(geometry, filter(plantdat_artr, y == 1 & z == 1), sparse = TRUE)),
-         nTP = ifelse(val == 1, nTP, NA), 
-         # nTPM: number of field mapped + detected + not NTP b/c 1 segment = 2 field points
-         nTPM = lengths(st_intersects(geometry, filter(plantdat_artr, detMult > 0), sparse = TRUE)),
-         nTPM = ifelse(val == 1, nTPM, NA), 
-         # nFP: number of field mapped + detected + classified as one but not in fact ARTR
-         # can be assumed to be absent, since we have only 17 plants across all sites
-         nFP = lengths(st_intersects(geometry, filter(plantdat_artr, y == 1 & z == 0), sparse = TRUE)),
-         nFP = ifelse(val == 1, nFP, NA),
-         # nM: number of field plants not detected with UAS
-         nM = lengths(st_intersects(geometry, filter(plantdat_artr, y == 0 & z == 1), sparse = TRUE)),
-         nM = ifelse(val == 1, nM, NA),
-         # nU: number of plants detected w/ UAS, but unknown validation status
-         nU = lengths(st_intersects(geometry, filter(plantdat_artr, detMult == 0 & is.na(z)), sparse = TRUE)), 
-         nU = ifelse(val == 1, nU, NA))
+map(ll, read.csv) |> 
+  bind_rows() -> idf
 
-write_sf(dfg, "data/celldat_full.geojson", delete_dsn = TRUE)
-dfg |> 
-  as.data.frame() |> select(-geometry) |> 
-  write.csv("data/celldat_full.csv")
-# ===
+idf |> 
+  mutate(TP = as.factor(TP)) |>
+  ggplot(aes(chm_max, colour = TP ) ) +
+  stat_ecdf(geom = 'step', pad = FALSE, linewidth = 1.5) +
+  theme_bw()
 
+idf |> 
+  mutate(FP = as.factor(FP)) |>
+  ggplot(aes(x = FP, y = chm_max)) + 
+  geom_violin() +
+  theme_bw()
+
+
+# === cell-level
+cols <- viridis::viridis(10)
+cts <- read.csv("data/celldat_match_counts.csv")
+
+leg <- c("FP" = cols[3], "FN" = cols[8])
+cts |> 
+  ggplot() + 
+  geom_jitter(aes(TP, FP, colour = "FP"), size = 1, alpha = .75) + 
+  geom_jitter(aes(TP, FN, colour = "FN"), size = 1, alpha = .75) + 
+  geom_abline(intercept = 0, slope = 1) +
+  scale_colour_manual(name = "Point", values = leg) +
+  labs(y = "") +
+  theme_bw()
+
+cts |> 
+  ggplot(aes(x = site, y = FN)) + geom_violin()
+
+a <- cts |> filter(FN > TP)
