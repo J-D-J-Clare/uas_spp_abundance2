@@ -44,11 +44,29 @@ het8 <- lapply(1:10, function(x) {
 ll <- list.files("~/../../Volumes/az_drive/uas_2022/", pattern = "_dtm_", full.names = TRUE, recursive = TRUE) 
 elev <- lapply(1:10, function(x) {
   rast(ll[[x]]) |> crop(rnull[[x]]) |> resample(rnull[[x]], method = "average")}) 
+tris <- lapply(1:10, function(x) {
+  tmp <- rast(ll[x]) 
+  set.crs(tmp, "epsg:32611") 
+  tmp |>
+    aggregate(fact = 166) |> terrain(v = "TRI", neighbors = 8) |>
+    crop(rnull[[x]]) |> resample(rnull[[x]]) })
+tris.sm <- lapply(1:10, function(x) {
+  tmp <- rast(ll[x]) 
+  set.crs(tmp, "epsg:32611") 
+  tmp |>
+    terrain(v = "TRI", neighbors = 8) |>
+    crop(rnull[[x]]) |> resample(rnull[[x]]) })
 tpis <- lapply(1:10, function(x) {
   tmp <- rast(ll[x]) 
   set.crs(tmp, "epsg:32611") 
   tmp |>
     aggregate(fact = 166) |> terrain(v = "TPI", neighbors = 8) |>
+    crop(rnull[[x]]) |> resample(rnull[[x]]) })
+tpis.sm <- lapply(1:10, function(x) {
+  tmp <- rast(ll[x]) 
+  set.crs(tmp, "epsg:32611") 
+  tmp |> 
+    terrain(v = "TPI", neighbors = 8) |>
     crop(rnull[[x]]) |> resample(rnull[[x]]) })
 slopes <- lapply(1:10, function(x) {
   tmp <- rast(ll[x])
@@ -56,6 +74,29 @@ slopes <- lapply(1:10, function(x) {
   tmp |>
     aggregate(fact = 166) |> terrain(v = "slope", neighbors = 8) |>
     crop(rnull[[x]]) |> resample(rnull[[x]]) })
+slopes.sm <- lapply(1:10, function(x) {
+  tmp <- rast(ll[x])
+  set.crs(tmp, "epsg:32611") 
+  tmp |>
+    terrain(v = "slope", neighbors = 8) |>
+    crop(rnull[[x]]) |> resample(rnull[[x]]) })
+flowdirs <- lapply(1:10, function(x) {
+  tmp <- rast(ll[x])
+  set.crs(tmp, "epsg:32611") 
+  tmp |>
+    aggregate(fact = 166) |> terrain(v = "flowdir", neighbors = 8) |>
+    crop(rnull[[x]]) |> resample(rnull[[x]]) })
+flowdirs.sm <- lapply(1:10, function(x) {
+  tmp <- rast(ll[x])
+  set.crs(tmp, "epsg:32611") 
+  tmp |>
+    terrain(v = "flowdir", neighbors = 8) |>
+    crop(rnull[[x]]) |> resample(rnull[[x]]) })
+# - rasters: view counts
+ll <- list.files("~/../../Volumes/az_drive/uas_2022/", pattern = "_view_counts_", full.names = TRUE, recursive = TRUE) 
+viewcts <- lapply(1:10, function(x) {
+  rast(ll[[x]]) |> crop(rnull[[x]]) |> resample(rnull[[x]], method = "med")}) 
+# end data import
 
 
 # === extract true plant counts (aka field/ground counts)
@@ -92,8 +133,13 @@ rcounts |> # write_sf("data/celldat_fcounts.geojson", delete_dsn = TRUE)
 # === extract cell-level covariates 
 rcell <- rcounts |> select(site, cid, ucid, val) |> 
   mutate(het3 = NA, het6 = NA, het8 = NA, 
-         tpi = NA, slope = NA, elev = NA, 
+         tri = NA, tri.sm = NA, 
+         tpi = NA, tpi.sm = NA, 
+         slope = NA, slope.sm = NA, 
+         flowdir = NA, flowdir.sm = NA,
+         elev = NA,
          max.ht = NA, avg.ht = NA,
+         viewct = NA,
          east = as.numeric(st_coordinates(st_centroid(geometry))[,1]), 
          north = as.numeric(st_coordinates(st_centroid(geometry))[,2]), 
          burnt = lengths(st_intersects(geometry, blines |> filter(burn == 1))),
@@ -107,11 +153,18 @@ for(i in 1:length(rnull)) {
   rcell[idx,"het3"] <- extract(het3[[i]], rcell[idx,])[,2]
   rcell[idx,"het6"] <- extract(het6[[i]], rcell[idx,])[,2]
   rcell[idx,"het8"] <- extract(het8[[i]], rcell[idx,])[,2]
+  rcell[idx,"tri"] <- extract(tris[[i]], rcell[idx,],)[,2]
+  rcell[idx,"tri.sm"] <- extract(tris.sm[[i]], rcell[idx,],)[,2]
   rcell[idx,"tpi"] <- extract(tpis[[i]], rcell[idx,],)[,2]
+  rcell[idx,"tpi.sm"] <- extract(tpis.sm[[i]], rcell[idx,],)[,2]
   rcell[idx,"slope"] <- extract(slopes[[i]], rcell[idx,])[,2]
+  rcell[idx,"slope.sm"] <- extract(slopes.sm[[i]], rcell[idx,])[,2]
+  rcell[idx,"flowdir"] <- extract(flowdirs[[i]], rcell[idx,])[,2]
+  rcell[idx,"flowdir.sm"] <- extract(flowdirs.sm[[i]], rcell[idx,])[,2]
   rcell[idx,"elev"] <- extract(elev[[i]], rcell[idx,])[,2]
   rcell[idx,"max.ht"] <- extract(chmMax[[i]], rcell[idx,])[,2]
   rcell[idx,"avg.ht"] <- extract(chmAvg[[i]], rcell[idx,])[,2]
+  rcell[idx,"viewct"] <- extract(viewcts[[i]], rcell[idx,])[,2]
 }
 
 # --- add distance
@@ -124,7 +177,7 @@ for(i in idnb) {rcell$dist[i] = -min(dmatnb[i,])}
 # ---
 
 # === export cell-level covariates
-rcell |> write_sf("data/celldat_covar.geojson", delete_dsn = TRUE) 
+rcell |> # write_sf("data/celldat_covar.geojson", delete_dsn = TRUE) 
   as.data.frame() |> select(-geometry) |> write.csv("data/celldat_covar.csv", row.names = FALSE)
 # ===
 rcell <- st_read("data/celldat_covar.geojson")
@@ -141,8 +194,12 @@ segpol <- st_read(paste0("~/../../Volumes/az_drive/FieldData/FieldData_2022/pred
   select(uid, site, chm_max, area, plant_type_preds, prob_ARTR) 
 st_agr(segpol) <- "constant"
 # classified polygons
-segpol_nonartr <- segpol |> filter(plant_type_preds != 'ARTR')
-segpol_artr <- segpol |> filter(plant_type_preds == 'ARTR')
+segpol_nonartr <- segpol |> 
+  filter(chm_max <= .5) |> # for medium plants only
+  filter(plant_type_preds != 'ARTR')
+segpol_artr <- segpol |> 
+  filter(chm_max <= .5) |> # for medium plants only
+  filter(plant_type_preds == 'ARTR')
 # field points
 artr <- plants |> 
   filter(!grepl("same", notes),
@@ -163,7 +220,7 @@ l1artr <- artr |>
   mutate(var = lengths(st_intersects(geometry, segpol_artr[l1idx < 2,]))) |>   
   filter(var == 1) |> select(-var) |>
   mutate(TP = 1, FP = 0, FN = 0)  |> # TP pts
-  st_intersection(segpol_artr[l1idx < 2,c('chm_max', 'area','uid','geometry')])
+  st_intersection(segpol_artr[l1idx < 2, c('chm_max', 'area','uid','geometry')])
 
 # === Level 1a: 1+ pts over 1 polygon (result: some FN and some TP)
 l1artrFNtmp <- artr |> 
@@ -256,16 +313,16 @@ l2FP |>
   bind_rows(l1artr, l2artr) |>
   bind_rows(l1artrFN, l2artrFN)  -> ca
 
-ca |> write_sf( paste0("../plantdat_artr_site/plantdat_artr_", site, ".geojson"), delete_dsn = TRUE )
+ca |> write_sf( paste0("../plantdat_artr_site/plantdat_artr_lt50_", site, ".geojson"), delete_dsn = TRUE )
 ca |> 
   as.data.frame() |> select(-geometry) |> 
-  write.csv( paste0("data/plantdat_artr_site/plantdat_artr_", site, ".csv"),row.names = FALSE)
+  write.csv( paste0("data/plantdat_artr_site/plantdat_artr_lt50_", site, ".csv"),row.names = FALSE)
 
 }
 
 # === Combine individual TP, FN, FP indices into cell-level counts
 rcell <- st_read("data/celldat_covar.geojson")
-ll <- list.files("data/plantdat_artr_site/", full.names = TRUE)
+ll <- list.files("data/plantdat_artr_site/", pattern = "_lt50_", full.names = TRUE)
 
 map(ll, read.csv) |> 
   bind_rows() |> 
@@ -284,14 +341,14 @@ rcell |>
          FN = ifelse(val == 1 & is.na(FN), 0, FN), 
          FP = ifelse(val == 1 & is.na(FP), 0, FP)) -> out
   
-out |> #write_sf("data/celldat_match_counts.geojson")  
+out |> #write_sf("data/celldat_match_counts_lt50.geojson", delete_dsn = TRUE)  
   as.data.frame() |> select(-geometry) |> 
-  write.csv("data/celldat_match_counts.csv", row.names = FALSE)
+  write.csv("data/celldat_match_counts_lt50.csv", row.names = FALSE)
 
 
 # === Visualize detection patterns
 # === individual-level
-ll <- list.files("data/plantdat_artr_site/", full.names = TRUE)
+ll <- list.files("data/plantdat_artr_site/", pattern = "lt50", full.names = TRUE)
 
 map(ll, read.csv) |> 
   bind_rows() -> idf
@@ -303,10 +360,17 @@ idf |>
   theme_bw()
 
 idf |> 
-  mutate(FP = as.factor(FP)) |>
-  ggplot(aes(x = FP, y = chm_max)) + 
+  mutate(TP = as.factor(TP)) |>
+  ggplot(aes(x = TP, y = chm_max)) + 
   geom_violin() +
   theme_bw()
+
+idf |> 
+  filter(!is.na(TP), FP != 1) |> 
+  mutate(ucid = paste0(site, "_", CID)) |>
+  filter(ucid %notin% outs) -> fdf
+
+1 - table(fdf$TP)[1]/table(fdf$TP)[2]
 
 
 # === cell-level
@@ -326,4 +390,11 @@ cts |>
 cts |> 
   ggplot(aes(x = site, y = FN)) + geom_violin()
 
-a <- cts |> filter(FN > TP)
+a <- cts |> filter(!is.na(TP))
+
+table(a$site)
+
+filter(cts, FN > 10) |> pull(ucid) -> outs
+
+
+
