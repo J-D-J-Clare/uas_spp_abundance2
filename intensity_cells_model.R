@@ -23,7 +23,7 @@ datcov <- st_read("data/celldat_covar.geojson") |>
   mutate(dist = ifelse(dist <= 0, -log(abs(dist-1)), log(abs(dist+1)) ) ) |>
   select(-c(het3, het6, het8, max.ht, avg.ht))  
 
-plot(datcov[datcov$site==site,'dist'])
+plot(datcov[datcov$site==site,'burnt'])
 
 # load counts
 datct <- read.csv("data/celldat_match_counts.csv") |> 

@@ -142,7 +142,7 @@ rcell <- rcounts |> select(site, cid, ucid, val) |>
          viewct = NA,
          east = as.numeric(st_coordinates(st_centroid(geometry))[,1]), 
          north = as.numeric(st_coordinates(st_centroid(geometry))[,2]), 
-         burnt = lengths(st_intersects(geometry, blines |> filter(burn == 1))),
+         burnt = abs(lengths(st_intersects(geometry, blines |> filter(burn == 0))) -1) ,
          dist = 0) 
 
 for(i in 1:length(rnull)) {
