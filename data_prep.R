@@ -80,17 +80,17 @@ slopes.sm <- lapply(1:10, function(x) {
   tmp |>
     terrain(v = "slope", neighbors = 8) |>
     crop(rnull[[x]]) |> resample(rnull[[x]]) })
-flowdirs <- lapply(1:10, function(x) {
+aspects <- lapply(1:10, function(x) {
   tmp <- rast(ll[x])
   set.crs(tmp, "epsg:32611") 
   tmp |>
-    aggregate(fact = 166) |> terrain(v = "flowdir", neighbors = 8) |>
+    aggregate(fact = 166) |> terrain(v = "aspect", neighbors = 8) |>
     crop(rnull[[x]]) |> resample(rnull[[x]]) })
-flowdirs.sm <- lapply(1:10, function(x) {
+aspects.sm <- lapply(1:10, function(x) {
   tmp <- rast(ll[x])
   set.crs(tmp, "epsg:32611") 
   tmp |>
-    terrain(v = "flowdir", neighbors = 8) |>
+    terrain(v = "aspect", neighbors = 8) |>
     crop(rnull[[x]]) |> resample(rnull[[x]]) })
 # - rasters: view counts
 ll <- list.files("~/../../Volumes/az_drive/uas_2022/", pattern = "_view_counts_", full.names = TRUE, recursive = TRUE) 
@@ -136,7 +136,7 @@ rcell <- rcounts |> select(site, cid, ucid, val) |>
          tri = NA, tri.sm = NA, 
          tpi = NA, tpi.sm = NA, 
          slope = NA, slope.sm = NA, 
-         flowdir = NA, flowdir.sm = NA,
+         aspect = NA, aspect.sm = NA,
          elev = NA,
          max.ht = NA, avg.ht = NA,
          viewct = NA,
@@ -159,8 +159,8 @@ for(i in 1:length(rnull)) {
   rcell[idx,"tpi.sm"] <- extract(tpis.sm[[i]], rcell[idx,],)[,2]
   rcell[idx,"slope"] <- extract(slopes[[i]], rcell[idx,])[,2]
   rcell[idx,"slope.sm"] <- extract(slopes.sm[[i]], rcell[idx,])[,2]
-  rcell[idx,"flowdir"] <- extract(flowdirs[[i]], rcell[idx,])[,2]
-  rcell[idx,"flowdir.sm"] <- extract(flowdirs.sm[[i]], rcell[idx,])[,2]
+  rcell[idx,"aspect"] <- extract(aspects[[i]], rcell[idx,])[,2]
+  rcell[idx,"aspect.sm"] <- extract(aspects.sm[[i]], rcell[idx,])[,2]
   rcell[idx,"elev"] <- extract(elev[[i]], rcell[idx,])[,2]
   rcell[idx,"max.ht"] <- extract(chmMax[[i]], rcell[idx,])[,2]
   rcell[idx,"avg.ht"] <- extract(chmAvg[[i]], rcell[idx,])[,2]
