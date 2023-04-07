@@ -195,15 +195,15 @@ segpol <- st_read(paste0("~/../../Volumes/az_drive/FieldData/FieldData_2022/pred
 st_agr(segpol) <- "constant"
 # classified polygons
 segpol_nonartr <- segpol |> 
-  filter(chm_max <= .5) |> # for medium plants only
+  filter(chm_max < .25) |> # size threshold
   filter(plant_type_preds != 'ARTR')
 segpol_artr <- segpol |> 
-  filter(chm_max <= .5) |> # for medium plants only
+  filter(chm_max < .25) |> # size threshold
   filter(plant_type_preds == 'ARTR')
 # field points
 artr <- plants |> 
   filter(!grepl("same", notes),
-    site == !!site, Ht_gt_25 == 1, 
+    site == !!site, Ht_gt_25 == 0, 
     Species %in% c('ARTR', 'ARTRW', 'ARTRV'))
 st_agr(artr) <- "constant"
 nonartr <- plants |> 
@@ -313,19 +313,19 @@ l2FP |>
   bind_rows(l1artr, l2artr) |>
   bind_rows(l1artrFN, l2artrFN)  -> ca
 
-ca |> write_sf( paste0("../plantdat_artr_site/plantdat_artr_lt50_", site, ".geojson"), delete_dsn = TRUE )
+ca |> write_sf( paste0("../plantdat_artr_site/plantdat_artr025_", site, ".geojson"), delete_dsn = TRUE )
 ca |> 
   as.data.frame() |> select(-geometry) |> 
-  write.csv( paste0("data/plantdat_artr_site/plantdat_artr_lt50_", site, ".csv"),row.names = FALSE)
+  write.csv( paste0("data/plantdat_artr_site/plantdat_artr025_", site, ".csv"),row.names = FALSE)
 
 }
 
 # === Combine individual TP, FN, FP indices into cell-level counts
 rcell <- st_read("data/celldat_covar.geojson")
-ll <- list.files("data/plantdat_artr_site/", pattern = "_lt50_", full.names = TRUE)
+ll <- list.files("data/plantdat_artr_site/", pattern = "artr025", full.names = TRUE)
 
 map(ll, read.csv) |> 
-  bind_rows() |> 
+  bind_rows() |>
   filter(!is.na(CID)) |> 
   mutate(Unk = ifelse(is.na(TP) & is.na(FN) & is.na(FP), 1, 0)) |>
   select(site, TP, FN, FP, Unk, CID) |>
@@ -341,60 +341,64 @@ rcell |>
          FN = ifelse(val == 1 & is.na(FN), 0, FN), 
          FP = ifelse(val == 1 & is.na(FP), 0, FP)) -> out
   
-out |> #write_sf("data/celldat_match_counts_lt50.geojson", delete_dsn = TRUE)  
+out |> # write_sf("data/celldat_match025_counts.geojson", delete_dsn = TRUE)  
   as.data.frame() |> select(-geometry) |> 
-  write.csv("data/celldat_match_counts_lt50.csv", row.names = FALSE)
+  write.csv("data/celldat_match025_counts.csv", row.names = FALSE)
+
+out <- read.csv("data/celldat_match_counts.csv")
 
 
+# ================================
 # === Visualize detection patterns
 # === individual-level
-ll <- list.files("data/plantdat_artr_site/", pattern = "lt50", full.names = TRUE)
-
-map(ll, read.csv) |> 
-  bind_rows() -> idf
-
-idf |> 
-  mutate(TP = as.factor(TP)) |>
-  ggplot(aes(chm_max, colour = TP ) ) +
-  stat_ecdf(geom = 'step', pad = FALSE, linewidth = 1.5) +
-  theme_bw()
-
-idf |> 
-  mutate(TP = as.factor(TP)) |>
-  ggplot(aes(x = TP, y = chm_max)) + 
-  geom_violin() +
-  theme_bw()
-
-idf |> 
-  filter(!is.na(TP), FP != 1) |> 
-  mutate(ucid = paste0(site, "_", CID)) |>
-  filter(ucid %notin% outs) -> fdf
-
-1 - table(fdf$TP)[1]/table(fdf$TP)[2]
-
-
-# === cell-level
-cols <- viridis::viridis(10)
-cts <- read.csv("data/celldat_match_counts.csv")
-
-leg <- c("FP" = cols[3], "FN" = cols[8])
-cts |> 
-  ggplot() + 
-  geom_jitter(aes(TP, FP, colour = "FP"), size = 1, alpha = .75) + 
-  geom_jitter(aes(TP, FN, colour = "FN"), size = 1, alpha = .75) + 
-  geom_abline(intercept = 0, slope = 1) +
-  scale_colour_manual(name = "Point", values = leg) +
-  labs(y = "") +
-  theme_bw()
-
-cts |> 
-  ggplot(aes(x = site, y = FN)) + geom_violin()
-
-a <- cts |> filter(!is.na(TP))
-
-table(a$site)
-
-filter(cts, FN > 10) |> pull(ucid) -> outs
+# ll <- list.files("data/plantdat_artr_site/", pattern = "", full.names = TRUE)
+# 
+# map(ll, read.csv) |> 
+#   bind_rows() |> 
+#   left_join(out |> select(val)) -> idf
+# 
+# idf |> 
+#   mutate(TP = as.factor(TP)) |>
+#   ggplot(aes(chm_max, colour = TP ) ) +
+#   stat_ecdf(geom = 'step', pad = FALSE, linewidth = 1.5) +
+#   theme_bw()
+# 
+# idf |> 
+#   mutate(TP = as.factor(TP)) |>
+#   ggplot(aes(x = TP, y = chm_max)) + 
+#   geom_violin() +
+#   theme_bw()
+# 
+# idf |> 
+#   filter(!is.na(TP), FP != 1) |> 
+#   mutate(ucid = paste0(site, "_", CID)) |>
+#   filter(ucid %notin% outs) -> fdf
+# 
+# 1 - table(fdf$TP)[1]/table(fdf$TP)[2]
+# 
+# 
+# # === cell-level
+# cols <- viridis::viridis(10)
+# cts <- read.csv("data/celldat_match_counts.csv")
+# 
+# leg <- c("FP" = cols[3], "FN" = cols[8])
+# cts |> 
+#   ggplot() + 
+#   geom_jitter(aes(TP, FP, colour = "FP"), size = 1, alpha = .75) + 
+#   geom_jitter(aes(TP, FN, colour = "FN"), size = 1, alpha = .75) + 
+#   geom_abline(intercept = 0, slope = 1) +
+#   scale_colour_manual(name = "Point", values = leg) +
+#   labs(y = "") +
+#   theme_bw()
+# 
+# cts |> 
+#   ggplot(aes(x = site, y = FN)) + geom_violin()
+# 
+# a <- cts |> filter(!is.na(TP))
+# 
+# table(a$site)
+# 
+# filter(cts, FN > 10) |> pull(ucid) -> outs
 
 
 
