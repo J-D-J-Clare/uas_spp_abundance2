@@ -1,5 +1,5 @@
-nsims=200
-ncells=1600
+nsims=1
+ncells=400
 alphaTrue=-.5 ###intercept--expecting about .5 real plants per "average" cell--can modify!
 betaTrue=.7
 alphaFalse=0 ###intercept--expecting about 1 false plant per average cell--can modify!

@@ -2,8 +2,7 @@
 
 pkgs <- c("tidyverse", "terra", "sf", "stars")
 sapply(pkgs, require, character.only = TRUE)
-
-`%notin%` <- negate(`%in%`)
+source("00_helper_fn.R")
 
 # --- load data
 # - field
@@ -188,22 +187,22 @@ rcell <- st_read("data/celldat_covar.geojson")
 for(k in 1:length(unique(rcell$site))) {
 
 site <- unique(rcell$site)[k]  
-# this is pretty convoluted stuff. takes time to follow what each does.
+# this is pretty convoluted stuff. takes time to follow what each step does.
   
-segpol <- st_read(paste0("~/../../Volumes/az_drive/FieldData/FieldData_2022/predicted_plants_rf_v1_sites/predicted_plants_rf_v1_", site, ".geojson") ) |> 
-  select(uid, site, chm_max, area, plant_type_preds, prob_ARTR) 
+segpol <- st_read(paste0("~/../../Volumes/az_drive/FieldData/FieldData_2022/ML_classification_segment/predicted_plants_v1_sites/predicted_plants_v1_", site, ".geojson") ) |> 
+  select(uid, site, chm_max, area, species_predictions) 
 st_agr(segpol) <- "constant"
 # classified polygons
 segpol_nonartr <- segpol |> 
-  filter(chm_max < .25) |> # size threshold
-  filter(plant_type_preds != 'ARTR')
+  filter(chm_max > .25) |> # size threshold
+  filter(species_predictions != 'ARTR')
 segpol_artr <- segpol |> 
-  filter(chm_max < .25) |> # size threshold
-  filter(plant_type_preds == 'ARTR')
+  filter(chm_max > .25) |> # size threshold
+  filter(species_predictions == 'ARTR')
 # field points
 artr <- plants |> 
   filter(!grepl("same", notes),
-    site == !!site, Ht_gt_25 == 0, 
+    site == !!site, Ht_gt_25 == 1, # size threshold
     Species %in% c('ARTR', 'ARTRW', 'ARTRV'))
 st_agr(artr) <- "constant"
 nonartr <- plants |> 
@@ -313,16 +312,16 @@ l2FP |>
   bind_rows(l1artr, l2artr) |>
   bind_rows(l1artrFN, l2artrFN)  -> ca
 
-ca |> write_sf( paste0("../plantdat_artr_site/plantdat_artr025_", site, ".geojson"), delete_dsn = TRUE )
+ca |> write_sf( paste0("../plantdat_artr_site/plantdat_artr_", site, ".geojson"), delete_dsn = TRUE )
 ca |> 
   as.data.frame() |> select(-geometry) |> 
-  write.csv( paste0("data/plantdat_artr_site/plantdat_artr025_", site, ".csv"),row.names = FALSE)
+  write.csv( paste0("data/plantdat_artr_site/plantdat_artr_", site, ".csv"),row.names = FALSE)
 
 }
 
 # === Combine individual TP, FN, FP indices into cell-level counts
 rcell <- st_read("data/celldat_covar.geojson")
-ll <- list.files("data/plantdat_artr_site/", pattern = "artr025", full.names = TRUE)
+ll <- list.files("data/plantdat_artr_site/", pattern = "artr_", full.names = TRUE)
 
 map(ll, read.csv) |> 
   bind_rows() |>
@@ -341,64 +340,45 @@ rcell |>
          FN = ifelse(val == 1 & is.na(FN), 0, FN), 
          FP = ifelse(val == 1 & is.na(FP), 0, FP)) -> out
   
-out |> # write_sf("data/celldat_match025_counts.geojson", delete_dsn = TRUE)  
+out |> # write_sf("data/celldat_match_counts.geojson", delete_dsn = TRUE)  
   as.data.frame() |> select(-geometry) |> 
-  write.csv("data/celldat_match025_counts.csv", row.names = FALSE)
+  write.csv("data/celldat_match_counts.csv", row.names = FALSE)
 
 out <- read.csv("data/celldat_match_counts.csv")
 
 
-# ================================
-# === Visualize detection patterns
-# === individual-level
-# ll <- list.files("data/plantdat_artr_site/", pattern = "", full.names = TRUE)
-# 
-# map(ll, read.csv) |> 
-#   bind_rows() |> 
-#   left_join(out |> select(val)) -> idf
-# 
-# idf |> 
-#   mutate(TP = as.factor(TP)) |>
-#   ggplot(aes(chm_max, colour = TP ) ) +
-#   stat_ecdf(geom = 'step', pad = FALSE, linewidth = 1.5) +
-#   theme_bw()
-# 
-# idf |> 
-#   mutate(TP = as.factor(TP)) |>
-#   ggplot(aes(x = TP, y = chm_max)) + 
-#   geom_violin() +
-#   theme_bw()
-# 
-# idf |> 
-#   filter(!is.na(TP), FP != 1) |> 
-#   mutate(ucid = paste0(site, "_", CID)) |>
-#   filter(ucid %notin% outs) -> fdf
-# 
-# 1 - table(fdf$TP)[1]/table(fdf$TP)[2]
-# 
-# 
-# # === cell-level
-# cols <- viridis::viridis(10)
-# cts <- read.csv("data/celldat_match_counts.csv")
-# 
-# leg <- c("FP" = cols[3], "FN" = cols[8])
-# cts |> 
-#   ggplot() + 
-#   geom_jitter(aes(TP, FP, colour = "FP"), size = 1, alpha = .75) + 
-#   geom_jitter(aes(TP, FN, colour = "FN"), size = 1, alpha = .75) + 
-#   geom_abline(intercept = 0, slope = 1) +
-#   scale_colour_manual(name = "Point", values = leg) +
-#   labs(y = "") +
-#   theme_bw()
-# 
-# cts |> 
-#   ggplot(aes(x = site, y = FN)) + geom_violin()
-# 
-# a <- cts |> filter(!is.na(TP))
-# 
-# table(a$site)
-# 
-# filter(cts, FN > 10) |> pull(ucid) -> outs
+# ==============================================
+# === Add site-level predictors to existing csv
+# ==============================================
+dfsite <- read.csv("data/site_level_data.csv")
 
+# === add segmentation metrics
+for(i in 1:nrow(dfsite)) {
+  s <- dfsite$site[i]
+  e <- ext(rnull[[i]]) |> st_bbox() |> st_as_sfc()
+  st_crs(e) <- 32611
+  areabb <- st_area(e) |> as.numeric()
+  # ---
+  segpol <- st_read(paste0("~/../../Volumes/az_drive/FieldData/FieldData_2022/predicted_plants_rf_v1_sites/predicted_plants_rf_v1_", s, ".geojson") ) |> 
+    select(uid, site, chm_max, area, plant_type_preds, prob_ARTR) |> 
+    st_intersection(e)
+  segpol_artr <- segpol |> 
+    filter(plant_type_preds == 'ARTR') 
+  
+  dfsite[dfsite$site == s,"pareasegartr"] <- sum(as.numeric(st_area(segpol_artr)))/areabb
+  dfsite[dfsite$site == s,"densegartr"] <- nrow(segpol_artr)/areabb
+  dfsite[dfsite$site == s,"pareaseg"] <- sum(as.numeric(st_area(segpol)))/areabb
+  dfsite[dfsite$site == s,"denseg"] <- nrow(segpol)/areabb
+}
+write.csv(dfsite, "data/site_level_data.csv", row.names = FALSE)
 
+corrplot::corrplot(cor(dfsite[,c(7:13, 15:18)]))
 
+# === add canopy metrics: avg ht for each site
+dfsite <- read.csv("data/site_level_data.csv")
+dfsite |> 
+  left_join(dat0 |> as.data.frame() |> select(site, avg.ht) |> 
+              group_by(site) |> summarize(avght = mean(avg.ht)) |> ungroup(), 
+            by = "site") -> a
+write.csv(a, "data/site_level_data.csv", row.names = FALSE)
+# ===
