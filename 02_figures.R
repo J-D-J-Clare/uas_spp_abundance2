@@ -26,11 +26,12 @@ lapply(ll, function(x) {read.csv(x) |>
          name = sub("tri", "TRI", name),
          name = sub("hli", "HLI", name),
          mod = sub(".csv", "", mod),
-         mod = ifelse(mod == "adult", "Adult", "Juvenile")) |>
+         mod = ifelse(mod == "adult", "Adult", "Juvenile")) |> 
   mutate(fp = ifelse(grepl("FP", name) == 1, "FP", "TP"),
-         name = gsub('\\.(.*)$', "", name), 
-         name = reorder(name, mean)
-         ) |> 
+         name = as.factor(gsub('\\.(.*)$', "", name))) |> 
+  mutate(
+    # name = fct_relevel(name, rev(c('CorralsTrail', 'SouthTrail', 'LowerDryCreek', 'InitialPointBurn', 'NorthHam', 'Cold', 'PonyComplex1', 'PonyComplex2', 'SodaNaturalArea2', 'SodaNaturalArea1'))), 
+    fpf = factor(fp, levels=c('TP','FP'))) |> 
   ggplot(aes(y = name, x = mean, colour = mod)) + 
   geom_point(position = position_dodge(width = 0.5)) +
   geom_errorbar(aes(x = mean, y = name, xmin = lower, xmax = upper), width = .1, position = position_dodge(width = .5)) + 
@@ -40,7 +41,7 @@ lapply(ll, function(x) {read.csv(x) |>
   # scale_y_discrete(labels = c("Height_avg", "Area segmented", "Wind_max") ) +
   labs(x = "Effect size", y = "", colour = "Size class") + 
   theme_bw() +  
-  facet_wrap(.~fp, nrow = 2)
+  facet_wrap(.~fpf, nrow = 2)
 
 # ggsave("figures/p.png", width = 12, height = 8, units = "cm")
 # ggsave("figures/psi.png", width = 12, height = 8, units = "cm")

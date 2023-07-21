@@ -12,6 +12,7 @@ lntp <- lapply(1:length(r), function(x) { r[[x]][[3]] |> mutate(prop = names$X[x
 # === total count 
 lntp |> 
   filter(prop > 10) |>
+  filter(prop > 10) |>
   group_by(model, prop) |> summarize(total = sum(mean), 
                                lower = sum(`2.5%`), 
                                upper = sum(`97.5%`)) |> ungroup() |>
@@ -42,6 +43,7 @@ lpar |>
 
 # === spatial term coefficients
 lpar |> 
+  filter(prop > 10) |>
   filter(grepl("theta", par) ) |> 
   ggplot(aes(x = prop, y = mean, group = par, fill = par)) + geom_line() +
   geom_ribbon(aes(ymin = `2.5%`, ymax = `97.5%`, fill = par, group = par), alpha = .5, linetype = "dotted", linewidth = .25) + 
@@ -51,6 +53,7 @@ lpar |>
 
 # === Beta Coefficients
 lpar |> 
+  filter(prop > 10) |>
   filter(grepl("beta", par) ) |> 
   ggplot(aes(x = prop, y = mean, group = par, fill = par, group = par)) + geom_line() +
   geom_ribbon(aes(ymin = `2.5%`, ymax = `97.5%`, fill = par, group = par), alpha = .5, linetype = "dotted", linewidth = .25) + 
