@@ -82,7 +82,7 @@ ll |> bind_rows() |> filter(ucid %in% refnames) -> dfntp
 dfntp|>
   mutate(base = c(rep(filter(dfntp, model == 'Adult', prop == 100) |> pull(mean), 10),
                   rep(filter(dfntp, model == 'Juv', prop == 100) |> pull(mean), 10)), 
-         mae = (abs(mean - base)) ) |>
+         mae = ((mean - base)) ) |> #-> tmp
   filter(prop > 10) |>
   ggplot() + geom_jitter(aes(x = prop, y = mae), alpha = .2) +
   # geom_errorbar(aes(ymin = lower, ymax = upper, x = prop), width = .25) + 
