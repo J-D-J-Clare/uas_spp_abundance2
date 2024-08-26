@@ -102,7 +102,11 @@ run_MCMC_allcode <- function(seed, Data = NULL) {
       if(log) return(logProb)
       else return(exp(logProb)) 
     })
-  rCompoundNMix <- nimbleFunction( # this is a placeholder for parallel implementation
+  rCompoundNMix <- nimbleFunction(
+    #In principle, this should generate a random value
+    #sensu rnorm(), but an appropriate rng was not needed for the application
+    #(rather, the HPC needed a place holding function to operate). If you need to
+    #generate random numbers (to impute data, for example), this should be redefined.
     run = function(n = integer(0), N = integer(0), p=double(0),
                    lamFP=double(0) ) {
       returnType(double(0))
