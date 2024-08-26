@@ -6,7 +6,7 @@ Andrii Zaiats, T. Trevor Caughlin, Jennyffer Cruz, David S. Pilliod, Megan E. Ca
 
 #### Overview:
 
-This repository stores the scripts that were used for the article "Scalable monitoring of plant population abundance in rangelands with aerial imagery under high observation errors."  
+This repository stores the scripts that were used for the article "Propagating observation errors to enable scalable and rigorous enumeration of plant population abundance with aerial imagery."  
 
 ___  
 
