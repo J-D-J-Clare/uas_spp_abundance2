@@ -14,7 +14,7 @@ The repository contains data processing, tabular data, figures, modeling results
 
 Folders:\
     - **utils**: scripts for reproducibility of the data pre-processing steps. Require external data.  
-    - **data**: contains .csv\ files and pre-processed spatial data that were used in the final statistical models.
+    - **data**: contains .csv\ files and pre-processed spatial data that were used in the final statistical models.  
     - **figures**: includes .png/ figures from _figures.R_  
     - **model_scripts**: final R scripts for the NIMBLE models.  
     - **results**: summaries of the posterior distributions stored in .csv files.  
