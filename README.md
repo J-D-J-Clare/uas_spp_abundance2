@@ -10,7 +10,7 @@ This repository stores the scripts that were used for the article "Propagating o
 
 ___  
 
-The repository contains data processing, tabular data, figures, modeling results, and simulations presented in the manuscript. 
+The repository contains data processing, tabular data, figures, modeling results, and simulations presented in the manuscript. Note that file-paths within the scripts may need to be altered to run smoothly.
 
 Folders:\
     - **utils**: scripts for reproducibility of the data pre-processing steps. Require external data.  
